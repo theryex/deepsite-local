@@ -20,13 +20,10 @@ const OLLAMA_URL = 'http://192.168.76.96:11434/api/tags';
 
 export async function getVLLMModels(): Promise<Model[]> {
     try {
-        console.log(`[getVLLMModels] Fetching from ${VLLM_URL}`);
         const res = await fetch(VLLM_URL, {
             headers: { 'accept': 'application/json' },
             cache: 'no-store'
         });
-
-        console.log(`[getVLLMModels] Status: ${res.status}`);
 
         if (!res.ok) {
              // 🛠️ Log network failure for debugging
@@ -35,7 +32,6 @@ export async function getVLLMModels(): Promise<Model[]> {
         }
 
         const data = await res.json();
-        // console.log(`[getVLLMModels] Data:`, JSON.stringify(data));
 
         // vLLM returns a list of models in 'data' array with 'id' property.
         return data.data.map((m: any) => ({
@@ -53,13 +49,10 @@ export async function getVLLMModels(): Promise<Model[]> {
 
 export async function getOllamaModels(): Promise<Model[]> {
     try {
-        console.log(`[getOllamaModels] Fetching from ${OLLAMA_URL}`);
         const res = await fetch(OLLAMA_URL, {
             headers: { 'accept': 'application/json' },
             cache: 'no-store'
         });
-
-        console.log(`[getOllamaModels] Status: ${res.status}`);
 
         if (!res.ok) {
              // 🛠️ Log network failure for debugging
@@ -68,7 +61,6 @@ export async function getOllamaModels(): Promise<Model[]> {
         }
 
         const data = await res.json();
-        console.log(`[getOllamaModels] Data models count:`, data.models?.length);
 
         // Ollama returns a list in 'models' array with 'name' property.
         return data.models.map((m: any) => ({
