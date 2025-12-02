@@ -16,7 +16,7 @@ type Model = {
 
 // 🛠️ CRITICAL FIX: Replaced 'host.docker.internal' with the static IP
 const VLLM_URL = 'http://192.168.76.96:8000/v1/models'; 
-const OLLAMA_URL = 'http://192.168.76.96:11434/api/tags';
+const OLLAMA_URL = 'http://ollama_master:11434/api/tags';
 
 export async function getVLLMModels(): Promise<Model[]> {
     try {
@@ -76,3 +76,4 @@ export async function getOllamaModels(): Promise<Model[]> {
         return [];
     }
 }
+
