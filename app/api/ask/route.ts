@@ -20,72 +20,6 @@ import { getBestProvider } from "@/lib/best-provider";
 
 const ipAddresses = new Map();
 
-// Helper for local inference
-async function streamLocalInference(
-  baseUrl: string,
-  modelName: string,
-  messages: any[],
-  writer: WritableStreamDefaultWriter,
-  encoder: TextEncoder,
-  params: any
-) {
-  try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages,
-        stream: true,
-        ...params,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Local inference failed: ${res.status} ${errorText}`);
-    }
-
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-
-    if (!reader) {
-      throw new Error("Response body is null");
-    }
-
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (line.trim() === "") continue;
-        if (line.trim() === "data: [DONE]") continue;
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            const chunk = data.choices?.[0]?.delta?.content;
-            if (chunk) {
-              await writer.write(encoder.encode(chunk));
-            }
-          } catch (e) {
-            console.error("Error parsing chunk:", e);
-          }
-        }
-      }
-    }
-  } catch (error) {
-    throw error;
-  }
-}
-
 export async function POST(request: NextRequest) {
   const authHeaders = await headers();
   const tokenInHeaders = authHeaders.get("Authorization");
@@ -163,9 +97,32 @@ export async function POST(request: NextRequest) {
 
     (async () => {
       try {
+        // 🛠️ PATCH 1: Configure the client for local LLMs
+        let clientConfig = {};
+        // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
         const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        const isLocal = isLocalVLLM || isLocalOllama;
+
+        let clientToken = token;
+
+        if (isLocalVLLM) {
+          clientConfig = {
+            // Use the static IP directly
+            baseUrl: 'http://192.168.76.96:8000/v1',
+          };
+          // 🛠️ FIX: Do not pass HF token to local provider to avoid "Cannot use endpointUrl with a third-party provider" error
+          clientToken = undefined as unknown as string;
+        } else if (isLocalOllama) {
+          clientConfig = {
+            // Use the static IP directly
+            baseUrl: 'http://192.168.76.96:11434/v1',
+          };
+          // 🛠️ FIX: Do not pass HF token to local provider to avoid "Cannot use endpointUrl with a third-party provider" error
+          clientToken = undefined as unknown as string;
+        }
+
+        const client = new InferenceClient(clientToken, clientConfig);
+        // END PATCH
 
         const systemPrompt = selectedModel.value.includes('MiniMax')
           ? INITIAL_SYSTEM_PROMPT_LIGHT
@@ -173,69 +130,54 @@ export async function POST(request: NextRequest) {
 
         const userPrompt = prompt;
 
-        // Determine model name
-        const modelName = isLocal
-          ? selectedModel.value
-          : selectedModel.value + (provider !== "auto" ? `:${provider}` : "");
+        // 🛠️ FIX 2: Determine the model name without the provider suffix for local
+        const modelName = isLocalVLLM || isLocalOllama
+          ? selectedModel.value // Local models use the model name from the value field (which is the actual model name)
+          : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
 
-        const messages = [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            ...(redesignMarkdown ? [{
-              role: "assistant",
-              content: `User will ask you to redesign the site based on this markdown. Use the same images as the site, but you can improve the content and the design. Here is the markdown: ${redesignMarkdown}`
-            }] : []),
-            {
-              role: "user",
-              content: userPrompt + (enhancedSettings.isActive ? `1. I want to use the following primary color: ${enhancedSettings.primaryColor} (eg: bg-${enhancedSettings.primaryColor}-500).
+        const chatCompletion = client.chatCompletionStream(
+          {
+            model: modelName, // 🛠️ Using modelName to fix the "model does not exist" error
+            messages: [
+              {
+                role: "system",
+                content: systemPrompt,
+              },
+              ...(redesignMarkdown ? [{
+                role: "assistant",
+                content: `User will ask you to redesign the site based on this markdown. Use the same images as the site, but you can improve the content and the design. Here is the markdown: ${redesignMarkdown}`
+              }] : []),
+              {
+                role: "user",
+                content: userPrompt + (enhancedSettings.isActive ? `1. I want to use the following primary color: ${enhancedSettings.primaryColor} (eg: bg-${enhancedSettings.primaryColor}-500).
 2. I want to use the following secondary color: ${enhancedSettings.secondaryColor} (eg: bg-${enhancedSettings.secondaryColor}-500).
 3. I want to use the following theme: ${enhancedSettings.theme} mode.` : "")
-            },
-        ];
-
-        const params = {
+              },
+            ],
+            // 🛑 FINAL FIX: Cast to any for optional parameters to stop compiler from whining
             ...((selectedModel as any).top_k ? { top_k: (selectedModel as any).top_k } : {}),
             ...((selectedModel as any).temperature ? { temperature: (selectedModel as any).temperature } : {}),
             ...((selectedModel as any).top_p ? { top_p: (selectedModel as any).top_p } : {}),
             max_tokens: 32000,
-        };
+          },
+          billTo ? { billTo } : {}
+        );
 
-        if (isLocal) {
-            // 🛠️ USE MANUAL FETCH FOR LOCAL MODELS
-            const baseUrl = isLocalVLLM
-                ? 'http://192.168.76.96:8000/v1'
-                : 'http://192.168.76.96:11434/v1';
+        while (true) {
+          const { done, value } = await chatCompletion.next()
+          if (done) {
+            break;
+          }
 
-            await streamLocalInference(baseUrl, modelName, messages, writer, encoder, params);
-        } else {
-            // 🛠️ USE INFERENCE CLIENT FOR REMOTE MODELS
-            const client = new InferenceClient(token);
-            const chatCompletion = client.chatCompletionStream(
-            {
-                model: modelName,
-                messages,
-                ...params,
-            },
-            billTo ? { billTo } : {}
-            );
-
-            while (true) {
-                const { done, value } = await chatCompletion.next()
-                if (done) {
-                    break;
-                }
-
-                const chunk = value.choices[0]?.delta?.content;
-                if (chunk) {
-                    await writer.write(encoder.encode(chunk));
-                }
-            }
+          const chunk = value.choices[0]?.delta?.content;
+          if (chunk) {
+            await writer.write(encoder.encode(chunk));
+          }
         }
 
         await writer.close();
       } catch (error: any) {
+        // 🛠️ Log the actual inference error from the local model
         console.error("Inference Error:", error);
 
         if (error.message?.includes("exceeded your monthly included credits")) {
@@ -372,14 +314,38 @@ export async function PUT(request: NextRequest) {
 
     (async () => {
       try {
+        // 🛠️ PATCH 1: Configure the client for local LLMs
+        let clientConfig = {};
+        // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
         const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        const isLocal = isLocalVLLM || isLocalOllama;
+
+        let clientToken = token;
+
+        if (isLocalVLLM) {
+            clientConfig = {
+                // Use the static IP directly
+                baseUrl: 'http://192.168.76.96:8000/v1',
+            };
+            // 🛠️ FIX: Do not pass HF token to local provider
+            clientToken = undefined as unknown as string;
+        } else if (isLocalOllama) {
+            clientConfig = {
+                // Use the static IP directly
+                baseUrl: 'http://192.168.76.96:11434/v1',
+            };
+            // 🛠️ FIX: Do not pass HF token to local provider
+            clientToken = undefined as unknown as string;
+        }
+
+        const client = new InferenceClient(clientToken, clientConfig);
+        // END PATCH
 
         const basePrompt = selectedModel.value.includes('MiniMax')
           ? FOLLOW_UP_SYSTEM_PROMPT_LIGHT
           : FOLLOW_UP_SYSTEM_PROMPT;
         const systemPrompt = basePrompt + (isNew ? PROMPT_FOR_PROJECT_NAME : "");
+        // const userContext = "You are modifying the HTML file based on the user's request.";
 
         const allPages = pages || [];
         const pagesContext = allPages
@@ -391,59 +357,44 @@ export async function PUT(request: NextRequest) {
             : ""
           }. Current pages (${allPages.length} total): ${pagesContext}. ${files?.length > 0 ? `Available images: ${files?.map((f: string) => f).join(', ')}.` : ""}`;
 
-        const modelName = isLocal
-          ? selectedModel.value
-          : selectedModel.value + (provider !== "auto" ? `:${provider}` : "");
+        // 🛠️ FIX 2: Determine the model name without the provider suffix for local
+        const modelName = isLocalVLLM || isLocalOllama
+          ? selectedModel.value // Local models use the model name from the value field
+          : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
 
-        const messages = [
-            {
-              role: "system",
-              content: systemPrompt + assistantContext
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-        ];
-
-        const params = {
+        const chatCompletion = client.chatCompletionStream(
+          {
+            model: modelName, // 🛠️ Using modelName to fix the "model does not exist" error
+            messages: [
+              {
+                role: "system",
+                content: systemPrompt + assistantContext
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            // 🛑 FINAL FIX: Cast to any for optional parameters to stop compiler from whining
             ...((selectedModel as any).top_k ? { top_k: (selectedModel as any).top_k } : {}),
             ...((selectedModel as any).temperature ? { temperature: (selectedModel as any).temperature } : {}),
             ...((selectedModel as any).top_p ? { top_p: (selectedModel as any).top_p } : {}),
             max_tokens: 32000,
-        };
+          },
+          billTo ? { billTo } : {}
+        );
 
-        if (isLocal) {
-            // 🛠️ USE MANUAL FETCH FOR LOCAL MODELS
-            const baseUrl = isLocalVLLM
-                ? 'http://192.168.76.96:8000/v1'
-                : 'http://192.168.76.96:11434/v1';
+        // Stream the response chunks to the client
+        while (true) {
+          const { done, value } = await chatCompletion.next();
+          if (done) {
+            break;
+          }
 
-            await streamLocalInference(baseUrl, modelName, messages, writer, encoder, params);
-        } else {
-            // 🛠️ USE INFERENCE CLIENT FOR REMOTE MODELS
-            const client = new InferenceClient(token);
-            const chatCompletion = client.chatCompletionStream(
-            {
-                model: modelName,
-                messages,
-                ...params,
-            },
-            billTo ? { billTo } : {}
-            );
-
-            // Stream the response chunks to the client
-            while (true) {
-                const { done, value } = await chatCompletion.next();
-                if (done) {
-                    break;
-                }
-
-                const chunk = value.choices[0]?.delta?.content;
-                if (chunk) {
-                    await writer.write(encoder.encode(chunk));
-                }
-            }
+          const chunk = value.choices[0]?.delta?.content;
+          if (chunk) {
+            await writer.write(encoder.encode(chunk));
+          }
         }
 
         await writer.write(encoder.encode(`\n___METADATA_START___\n${JSON.stringify({
@@ -454,6 +405,7 @@ export async function PUT(request: NextRequest) {
 
         await writer.close();
       } catch (error: any) {
+        // 🛠️ Log the actual inference error from the local model
         console.error("Inference Error:", error);
 
         if (error.message?.includes("exceeded your monthly included credits")) {
