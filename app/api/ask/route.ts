@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { InferenceClient } from "@huggingface/inference";
 
-import { getMODELS } from "@/lib/providers"; 
+import { getMODELS } from "@/lib/providers";
 import {
   FOLLOW_UP_SYSTEM_PROMPT,
   FOLLOW_UP_SYSTEM_PROMPT_LIGHT,
@@ -27,9 +27,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { prompt, provider, model, redesignMarkdown, enhancedSettings, pages } = body;
-  
+
   // 🛠️ FIX 1: Fetch models at the start
-  const MODELS = await getMODELS(); 
+  const MODELS = await getMODELS();
 
   // 🛠️ FIX 2: Single declaration of selectedModel
   const selectedModel = MODELS.find(
@@ -102,22 +102,28 @@ export async function POST(request: NextRequest) {
         // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
         const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        
+
+        let clientToken = token;
+
         if (isLocalVLLM) {
           clientConfig = {
             // Use the static IP directly
-            baseUrl: 'http://192.168.76.96:8000/v1', 
+            baseUrl: 'http://192.168.76.96:8000/v1',
           };
+          // 🛠️ FIX: Do not pass HF token to local provider to avoid "Cannot use endpointUrl with a third-party provider" error
+          clientToken = undefined as unknown as string;
         } else if (isLocalOllama) {
           clientConfig = {
             // Use the static IP directly
             baseUrl: 'http://192.168.76.96:11434/v1',
           };
+          // 🛠️ FIX: Do not pass HF token to local provider to avoid "Cannot use endpointUrl with a third-party provider" error
+          clientToken = undefined as unknown as string;
         }
 
-        const client = new InferenceClient(token, clientConfig); 
+        const client = new InferenceClient(clientToken, clientConfig);
         // END PATCH
-        
+
         const systemPrompt = selectedModel.value.includes('MiniMax')
           ? INITIAL_SYSTEM_PROMPT_LIGHT
           : INITIAL_SYSTEM_PROMPT;
@@ -125,7 +131,7 @@ export async function POST(request: NextRequest) {
         const userPrompt = prompt;
 
         // 🛠️ FIX 2: Determine the model name without the provider suffix for local
-        const modelName = isLocalVLLM || isLocalOllama 
+        const modelName = isLocalVLLM || isLocalOllama
           ? selectedModel.value // Local models use the model name from the value field (which is the actual model name)
           : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
 
@@ -173,7 +179,7 @@ export async function POST(request: NextRequest) {
       } catch (error: any) {
         // 🛠️ Log the actual inference error from the local model
         console.error("Inference Error:", error);
-        
+
         if (error.message?.includes("exceeded your monthly included credits")) {
           await writer.write(
             encoder.encode(
@@ -240,14 +246,14 @@ export async function PUT(request: NextRequest) {
   const body = await request.json();
   const { prompt, provider, selectedElementHtml, model, pages, files, repoId, isNew } =
     body;
-    
+
   // 🛠️ NEW: Fetch dynamic models list
   const MODELS = await getMODELS();
 
   const selectedModel = MODELS.find(
     (m) => m.value === model || m.label === model
   );
-  
+
   if (!prompt || pages.length === 0) {
     return NextResponse.json(
       { ok: false, error: "Missing required fields" },
@@ -313,20 +319,26 @@ export async function PUT(request: NextRequest) {
         // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
         const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        
+
+        let clientToken = token;
+
         if (isLocalVLLM) {
             clientConfig = {
                 // Use the static IP directly
                 baseUrl: 'http://192.168.76.96:8000/v1',
             };
+            // 🛠️ FIX: Do not pass HF token to local provider
+            clientToken = undefined as unknown as string;
         } else if (isLocalOllama) {
             clientConfig = {
                 // Use the static IP directly
                 baseUrl: 'http://192.168.76.96:11434/v1',
             };
+            // 🛠️ FIX: Do not pass HF token to local provider
+            clientToken = undefined as unknown as string;
         }
 
-        const client = new InferenceClient(token, clientConfig); 
+        const client = new InferenceClient(clientToken, clientConfig);
         // END PATCH
 
         const basePrompt = selectedModel.value.includes('MiniMax')
@@ -346,7 +358,7 @@ export async function PUT(request: NextRequest) {
           }. Current pages (${allPages.length} total): ${pagesContext}. ${files?.length > 0 ? `Available images: ${files?.map((f: string) => f).join(', ')}.` : ""}`;
 
         // 🛠️ FIX 2: Determine the model name without the provider suffix for local
-        const modelName = isLocalVLLM || isLocalOllama 
+        const modelName = isLocalVLLM || isLocalOllama
           ? selectedModel.value // Local models use the model name from the value field
           : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
 
