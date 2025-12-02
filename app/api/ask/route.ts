@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     (async () => {
       try {
-        // 🛠️ PATCH: Configure the client for local LLMs
+        // 🛠️ PATCH 1: Configure the client for local LLMs
         let clientConfig = {};
         // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
@@ -105,11 +105,13 @@ export async function POST(request: NextRequest) {
         
         if (isLocalVLLM) {
           clientConfig = {
-            baseUrl: 'http://host.docker.internal:8000/v1',
+            // Use the static IP directly
+            baseUrl: 'http://192.168.76.96:8000/v1', 
           };
         } else if (isLocalOllama) {
           clientConfig = {
-            baseUrl: 'http://host.docker.internal:11434/v1',
+            // Use the static IP directly
+            baseUrl: 'http://192.168.76.96:11434/v1',
           };
         }
 
@@ -122,9 +124,9 @@ export async function POST(request: NextRequest) {
 
         const userPrompt = prompt;
 
-        // 🛠️ FIX 3: Determine the model name without the provider suffix for local
+        // 🛠️ FIX 2: Determine the model name without the provider suffix for local
         const modelName = isLocalVLLM || isLocalOllama 
-          ? selectedModel.value // Local models use the model name from the value field
+          ? selectedModel.value // Local models use the model name from the value field (which is the actual model name)
           : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
 
         const chatCompletion = client.chatCompletionStream(
@@ -169,6 +171,9 @@ export async function POST(request: NextRequest) {
 
         await writer.close();
       } catch (error: any) {
+        // 🛠️ Log the actual inference error from the local model
+        console.error("Inference Error:", error);
+        
         if (error.message?.includes("exceeded your monthly included credits")) {
           await writer.write(
             encoder.encode(
@@ -303,7 +308,7 @@ export async function PUT(request: NextRequest) {
 
     (async () => {
       try {
-        // 🛠️ PATCH: Configure the client for local LLMs
+        // 🛠️ PATCH 1: Configure the client for local LLMs
         let clientConfig = {};
         // 🛑 FIX: Cast to 'any' to bypass Type error: Property 'id' does not exist on type 'Model | { ... }'
         const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
@@ -311,11 +316,13 @@ export async function PUT(request: NextRequest) {
         
         if (isLocalVLLM) {
             clientConfig = {
-                baseUrl: 'http://host.docker.internal:8000/v1',
+                // Use the static IP directly
+                baseUrl: 'http://192.168.76.96:8000/v1',
             };
         } else if (isLocalOllama) {
             clientConfig = {
-                baseUrl: 'http://host.docker.internal:11434/v1',
+                // Use the static IP directly
+                baseUrl: 'http://192.168.76.96:11434/v1',
             };
         }
 
@@ -338,7 +345,7 @@ export async function PUT(request: NextRequest) {
             : ""
           }. Current pages (${allPages.length} total): ${pagesContext}. ${files?.length > 0 ? `Available images: ${files?.map((f: string) => f).join(', ')}.` : ""}`;
 
-        // 🛠️ FIX 3: Determine the model name without the provider suffix for local
+        // 🛠️ FIX 2: Determine the model name without the provider suffix for local
         const modelName = isLocalVLLM || isLocalOllama 
           ? selectedModel.value // Local models use the model name from the value field
           : selectedModel.value + (provider !== "auto" ? `:${provider}` : ""); // Remote models use provider suffix
@@ -386,6 +393,9 @@ export async function PUT(request: NextRequest) {
 
         await writer.close();
       } catch (error: any) {
+        // 🛠️ Log the actual inference error from the local model
+        console.error("Inference Error:", error);
+
         if (error.message?.includes("exceeded your monthly included credits")) {
           await writer.write(
             encoder.encode(
