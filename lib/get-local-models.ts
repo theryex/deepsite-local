@@ -14,10 +14,9 @@ type Model = {
     top_p?: number;
 };
 
-// IMPORTANT: These URLs use 'host.docker.internal' to access your host machine
-const VLLM_URL = 'http://host.docker.internal:8000/v1/models';
-// 🛠️ Ollama uses /api/tags directly, not /v1/models. This is corrected below.
-const OLLAMA_URL = 'http://host.docker.internal:11434/api/tags';
+// 🛠️ CRITICAL FIX: Replaced 'host.docker.internal' with the static IP
+const VLLM_URL = 'http://192.168.76.96:8000/v1/models'; 
+const OLLAMA_URL = 'http://192.168.76.96:11434/api/tags';
 
 export async function getVLLMModels(): Promise<Model[]> {
     try {
@@ -27,7 +26,8 @@ export async function getVLLMModels(): Promise<Model[]> {
         });
         
         if (!res.ok) {
-             console.error(`vLLM failed with status: ${res.status}`);
+             // 🛠️ Log network failure for debugging
+             console.error(`vLLM failed with status: ${res.status}. Check if vLLM is running and firewall is open on 192.168.76.96:8000.`);
              return [];
         }
         
@@ -55,7 +55,8 @@ export async function getOllamaModels(): Promise<Model[]> {
         });
         
         if (!res.ok) {
-             console.error(`Ollama failed with status: ${res.status}`);
+             // 🛠️ Log network failure for debugging
+             console.error(`Ollama failed with status: ${res.status}. Check if Ollama is running and firewall is open on 192.168.76.96:11434.`);
              return [];
         }
 
