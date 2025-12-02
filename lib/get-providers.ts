@@ -18,6 +18,7 @@ export const getProviders = async (model: string) => {
       }
 
       const json = await response.json();
+      const data = json.data || json;
       // Safely access data
       const data = json.data || json; // Handle potential API variations
 
