@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  deepsite-local:
+    # 🛠️ Re-added for manual identification when not using Portainer
+    container_name: deepsite-local 
+    
+    # We keep the build definition since we are building locally
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    # 🛠️ New: Docker Compose will automatically look for .env or .env.local 
+    # and substitute variables in the environment block.
+    # Note: If HF_TOKEN is defined in the .env.local file, you can remove
+    # the 'HF_TOKEN=...' line below and reference the variable name.
+    env_file:
+      - .env.local 
+
+    image: deepsite-local:latest
+    ports:
+      - "8505:3000"
+    
+    environment:
+      # CRITICAL: Define the external URL for NextAuth/Redirects.
+      # You can reference the variable from your .env file here:
+      - NEXTAUTH_URL=http://100.104.192.80:8505
+      - OPENAI_API_KEY=dummy-key
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      # 🛠️ Keep this line if HF_TOKEN is NOT in your .env.local file, otherwise remove it.
+      - HF_TOKEN=${HF_TOKEN} 
+      
+    extra_hosts:
+      # CRITICAL: Allows the container to reach your host's vLLM/Ollama services
+      - "host.docker.internal:host-gateway"
+      
+    volumes:
+      # We keep the volume for easy code debugging/changes, and the node_modules exclusion
+      - ./:/app 
+      - /app/node_modules
+      
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+              
+    restart: unless-stopped
