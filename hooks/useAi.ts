@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useMemo, useRef, useState, useEffect } from "react"; 
+import { useMemo, useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useLocalStorage } from "react-use";
 
-import { getMODELS } from "@/lib/providers"; // 🛠️ Corrected import
+// 🛠️ REMOVED DIRECT IMPORT OF getMODELS
+// import { getMODELS } from "@/lib/providers";
+
 import { useEditor } from "./useEditor";
 import { Page, EnhancedSettings } from "@/types";
 import { api } from "@/lib/api";
@@ -19,15 +21,15 @@ export const useAi = (onScrollToBottom?: () => void) => {
   const audio = useRef<HTMLAudioElement | null>(null);
   const { setPages, setCurrentPage, setPreviewPage, setPrompts, prompts, pages, project, setProject, commits, setCommits, setLastSavedPages, isSameHtml } = useEditor();
   const [controller, setController] = useState<AbortController | null>(null);
-  
+
   // 🛠️ NEW STATE: Store the dynamically fetched models and loading state
   const [models, setModels] = useState<ModelType[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(true);
 
-  // 🛠️ PATCH 1: Use a safe default value ("no-model-selected") 
+  // 🛠️ PATCH 1: Use a safe default value ("no-model-selected")
   const [storageProvider, setStorageProvider] = useLocalStorage("provider", "auto");
-  const [storageModel, setStorageModel] = useLocalStorage("model", "no-model-selected"); 
-  
+  const [storageModel, setStorageModel] = useLocalStorage("model", "no-model-selected");
+
   const router = useRouter();
   const { token } = useUser();
   const pathname = usePathname();
@@ -35,23 +37,32 @@ export const useAi = (onScrollToBottom?: () => void) => {
   const repoId = pathname.split("/")[2];
   const streamingPagesRef = useRef<Set<string>>(new Set());
 
-  // 🛠️ MODEL LOADING EFFECT
+  // 🛠️ MODEL LOADING EFFECT - NOW FETCHING FROM API
   useEffect(() => {
     const loadModels = async () => {
       setIsModelsLoading(true);
-      const fetchedModels = await getMODELS();
-      setModels(fetchedModels);
+      try {
+          const res = await fetch('/deepsite/api/models');
+          if (!res.ok) throw new Error('Failed to fetch models');
+          const fetchedModels = await res.json();
+          setModels(fetchedModels);
 
-      // Check storage for the model value
-      const currentModelValue = localStorage.getItem("model")?.replace(/"/g, '') || "";
-      
-      // If the stored model is the placeholder OR doesn't exist in the new list, set the first model as the default.
-      if (currentModelValue === "no-model-selected" || !fetchedModels.find(m => m.value === currentModelValue)) {
-          if (fetchedModels.length > 0) {
-              setStorageModel(fetchedModels[0].value);
+          // Check storage for the model value
+          const currentModelValue = localStorage.getItem("model")?.replace(/"/g, '') || "";
+
+          // If the stored model is the placeholder OR doesn't exist in the new list, set the first model as the default.
+          if (currentModelValue === "no-model-selected" || !fetchedModels.find((m: any) => m.value === currentModelValue)) {
+              if (fetchedModels.length > 0) {
+                  setStorageModel(fetchedModels[0].value);
+              }
           }
+      } catch (e) {
+          console.error("Failed to load models via API:", e);
+          // Fallback to empty list or handle error
+          setModels([]);
+      } finally {
+          setIsModelsLoading(false);
       }
-      setIsModelsLoading(false);
     };
 
     loadModels();
@@ -67,7 +78,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
   const setIsAiWorking = (newIsAiWorking: boolean) => {
     client.setQueryData(["ai.isAiWorking"], newIsAiWorking);
   };
-  
+
   const { data: isThinking = false } = useQuery({
     queryKey: ["ai.isThinking"],
     queryFn: async () => false,
@@ -159,14 +170,14 @@ export const useAi = (onScrollToBottom?: () => void) => {
     queryFn: async () => {
       // 🛠️ PATCH 2: Use the models state and loading flag
       if (isModelsLoading && models.length === 0) {
-        return storageModel; 
+        return storageModel;
       }
-      
+
       const selectedModel = models.find(m => m.value === storageModel || m.label === storageModel);
       if (selectedModel) {
         return selectedModel.value;
       }
-      
+
       // Return the first loaded model if the stored one is missing
       if (models.length > 0) {
         return models[0].value;
@@ -201,7 +212,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
         });
 
         const uploadRes = await uploadRequest.json();
-        
+
         if (!uploadRequest.ok || !uploadRes.ok) {
           throw new Error(uploadRes.error || "Failed to create project");
         }
@@ -220,18 +231,18 @@ export const useAi = (onScrollToBottom?: () => void) => {
       if (audio.current) audio.current.play();
     }
   }
-  
+
   const callAiNewProject = async (prompt: string, enhancedSettings?: EnhancedSettings, redesignMarkdown?: string, isLoggedIn?: boolean, userName?: string) => {
     if (isAiWorking) return;
     if (!redesignMarkdown && !prompt.trim()) return;
-    
+
     setIsAiWorking(true);
     setThinkingContent(""); // Reset thinking content
     streamingPagesRef.current.clear(); // Reset tracking for new generation
-    
+
     const abortController = new AbortController();
     setController(abortController);
-    
+
     try {
       const request = await fetch("/deepsite/api/ask", {
         method: "POST",
@@ -257,7 +268,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
 
         const read = async (): Promise<any> => {
           const { done, value } = await reader.read();
-          
+
           if (done) {
             // Final processing - extract and remove thinking content
             const thinkMatch = contentResponse.match(/<think>([\s\S]*?)<\/think>/);
@@ -287,7 +298,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
               } catch (e) {
               }
             }
-            
+
             const newPages = formatPages(contentResponse, false);
             let projectName = contentResponse.match(/<<<<<<< PROJECT_NAME_START\s*([\s\S]*?)\s*>>>>>>> PROJECT_NAME_END/)?.[1]?.trim();
             if (!projectName) {
@@ -305,7 +316,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
 
           const chunk = decoder.decode(value, { stream: true });
           contentResponse += chunk;
-          
+
           // Extract thinking content while streaming
           if (contentResponse.includes('</think>')) {
             // Thinking is complete, extract final content and stop thinking
@@ -348,7 +359,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
           }
 
           formatPages(contentResponse, true);
-          
+
           return read();
         };
 
@@ -360,11 +371,11 @@ export const useAi = (onScrollToBottom?: () => void) => {
       setIsThinking(false);
       setThinkingContent("");
       setController(null);
-      
+
       if (!abortController.signal.aborted) {
         toast.error(error.message || "Network error occurred");
       }
-      
+
       if (error.openLogin) {
         return { error: "login_required" };
       }
@@ -376,15 +387,15 @@ export const useAi = (onScrollToBottom?: () => void) => {
     if (isAiWorking) return;
     if (!prompt.trim()) return;
 
-    
+
     setIsAiWorking(true);
     setThinkingContent(""); // Reset thinking content
-    
+
     const abortController = new AbortController();
     setController(abortController);
-    
+
     try {
-      const pagesToSend = contextFile 
+      const pagesToSend = contextFile
         ? pages.filter(page => page.path === contextFile)
         : pages;
 
@@ -418,7 +429,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
 
         const read = async (): Promise<any> => {
           const { done, value } = await reader.read();
-          
+
           if (done) {
             // Extract and remove thinking content
             const thinkMatch = contentResponse.match(/<think>([\s\S]*?)<\/think>/);
@@ -459,12 +470,12 @@ export const useAi = (onScrollToBottom?: () => void) => {
                 // Not JSON, continue with normal processing
               }
             }
-            
+
             const { processAiResponse, extractProjectName } = await import("@/lib/format-ai-response");
             const { updatedPages, updatedLines } = processAiResponse(contentResponse, pagesToSend);
-            
+
             const updatedPagesMap = new Map(updatedPages.map((p: Page) => [p.path, p]));
-            const mergedPages: Page[] = pages.map(page => 
+            const mergedPages: Page[] = pages.map(page =>
               updatedPagesMap.has(page.path) ? updatedPagesMap.get(page.path)! : page
             );
             updatedPages.forEach((page: Page) => {
@@ -497,7 +508,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
               });
 
               const uploadRes = await uploadRequest.json();
-              
+
               if (!uploadRequest.ok || !uploadRes.ok) {
                 throw new Error(uploadRes.error || "Failed to upload to HuggingFace");
               }
@@ -536,7 +547,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
 
           const chunk = decoder.decode(value, { stream: true });
           contentResponse += chunk;
-          
+
           // Extract thinking content while streaming
           if (contentResponse.includes('</think>')) {
             // Thinking is complete, extract final content and stop thinking
@@ -579,7 +590,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
               // Not complete JSON yet, continue
             }
           }
-          
+
           return read();
         };
 
@@ -591,11 +602,11 @@ export const useAi = (onScrollToBottom?: () => void) => {
       setIsThinking(false);
       setThinkingContent("");
       setController(null);
-      
+
       if (!abortController.signal.aborted) {
         toast.error(error.message || "Network error occurred");
       }
-      
+
       if (error.openLogin) {
         return { error: "login_required" };
       }
@@ -643,15 +654,15 @@ export const useAi = (onScrollToBottom?: () => void) => {
     if (pages.length > 0) {
       setPages(pages);
       if (isStreaming) {
-        const newPages = pages.filter(p => 
+        const newPages = pages.filter(p =>
           !streamingPagesRef.current.has(p.path)
         );
-        
+
         if (newPages.length > 0) {
           const newPage = newPages[0];
           setCurrentPage(newPage.path);
           streamingPagesRef.current.add(newPage.path);
-          
+
           if (newPage.path.endsWith('.html') && !newPage.path.includes('/components/')) {
             setPreviewPage(newPage.path);
           }
@@ -670,9 +681,9 @@ export const useAi = (onScrollToBottom?: () => void) => {
 
   const extractFileContent = (chunk: string, filePath: string): string => {
     if (!chunk) return "";
-    
+
     let content = chunk.trim();
-    
+
     if (filePath.endsWith('.css')) {
       const cssMatch = content.match(/```css\s*([\s\S]*?)\s*```/);
       if (cssMatch) {
@@ -700,7 +711,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
           content = doctypeMatch[0];
         }
       }
-      
+
       let htmlContent = content.replace(/```/g, "");
       htmlContent = ensureCompleteHtml(htmlContent);
       return htmlContent;
@@ -756,7 +767,7 @@ export const useAi = (onScrollToBottom?: () => void) => {
     selectedModel,
     audio,
     // 🛠️ Final Return of Missing Context/File Props
-    contextFile, 
+    contextFile,
     setContextFile,
     selectedFiles,
     setSelectedFiles,
