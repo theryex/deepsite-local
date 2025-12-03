@@ -126,6 +126,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 🛠️ CHECK LOCAL STATUS EARLY
+  const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
+  const isLocalOllama = (selectedModel as any).id === 'local-ollama';
+  const isLocal = isLocalVLLM || isLocalOllama;
+
   let token: string | null = null;
   if (userToken) token = userToken;
   let billTo: string | null = null;
@@ -141,7 +146,8 @@ export async function POST(request: NextRequest) {
     ? authHeaders.get("x-forwarded-for")?.split(",")[1].trim()
     : authHeaders.get("x-forwarded-for");
 
-  if (!token || token === "null" || token === "") {
+  // 🛠️ BYPASS RATE LIMIT FOR LOCAL MODELS
+  if (!isLocal && (!token || token === "null" || token === "")) {
     ipAddresses.set(ip, (ipAddresses.get(ip) || 0) + 1);
     if (ipAddresses.get(ip) > MAX_REQUESTS_PER_IP) {
       return NextResponse.json(
@@ -174,10 +180,6 @@ export async function POST(request: NextRequest) {
 
     (async () => {
       try {
-        const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
-        const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        const isLocal = isLocalVLLM || isLocalOllama;
-        
         console.log(`[POST] isLocal: ${isLocal}, VLLM: ${isLocalVLLM}, Ollama: ${isLocalOllama}`);
 
         const systemPrompt = selectedModel.value.includes('MiniMax')
