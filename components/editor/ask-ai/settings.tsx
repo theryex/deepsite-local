@@ -7,7 +7,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 // 🛠️ REMOVED DIRECT IMPORT OF getMODELS
-import { PROVIDERS } from "@/lib/providers";
+import { PROVIDERS } from "@/lib/providers"; 
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react"; 
 import { useUpdateEffect } from "react-use";
 import Image from "next/image";
 import {
@@ -31,7 +31,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { useAi } from "@/hooks/useAi";
-import { getProviders } from "@/lib/get-providers";
+import { getProviders } from "@/lib/providers-fetch";
 import Loading from "@/components/loading";
 
 // NOTE: Removing the local 'type ModelItem' definition as it clashes with the global 'ModelType'
@@ -58,9 +58,9 @@ export function Settings({
     globalAiLoading,
     isModelsLoading: globalModelsLoading, // Use a local alias to avoid naming conflict
   } = useAi();
-
+  
   // 🛠️ NEW STATE: Store the dynamically fetched models (using 'any' to avoid circular type dependency hell)
-  const [models, setModels] = useState<any[]>([]);
+  const [models, setModels] = useState<any[]>([]); 
   const [isModelsLoading, setIsModelsLoading] = useState(true);
 
   const [isMounted, setIsMounted] = useState(false);
@@ -85,7 +85,7 @@ export function Settings({
         }
     };
     fetchModels();
-  }, []);
+  }, []); 
 
   useUpdateEffect(() => {
     if (
@@ -95,7 +95,7 @@ export function Settings({
       setProvider("auto");
     }
   }, [model, provider]);
-
+  
   // 🛠️ PATCH 2: Correctly format the model list using useMemo and the state variable
   const formattedModels = useMemo(() => {
     const lists: any[] = [];
@@ -107,14 +107,14 @@ export function Settings({
         lists.push({
           isCategory: true,
           name: currentModel.companyName,
-          logo: currentModel.logo,
+          logo: currentModel.logo, 
         });
         keys.add(currentModel.companyName);
       }
       lists.push(currentModel);
     });
     return lists;
-  }, [models]);
+  }, [models]); 
 
   const [providers, setProviders] = useState<any[]>([]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
@@ -122,7 +122,7 @@ export function Settings({
   useEffect(() => {
     const loadProviders = async () => {
       setLoadingProviders(true);
-      if (!model) {
+      if (!model) { 
         setProviders([]);
         return;
       }
@@ -145,7 +145,7 @@ export function Settings({
   };
 
   const isAnyLoading = globalAiLoading || loadingProviders || isModelsLoading;
-
+  
   // 🛠️ FINAL FIX: Create a temporary variable with known types to satisfy the compiler check (Line 165)
   // This tells TypeScript: "Treat this selectedModel like it definitely has a label and logo."
   const modelWithLogo = selectedModel as { label: string; logo: any } | undefined;
