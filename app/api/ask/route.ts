@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
         } else {
             console.log(`[POST] Using InferenceClient for remote model: ${modelName}`);
             // 🛠️ USE INFERENCE CLIENT FOR REMOTE MODELS
-            const client = new InferenceClient(token);
+            const client = new InferenceClient(token || undefined);
             const chatCompletion = client.chatCompletionStream(
             {
                 model: modelName,
@@ -342,6 +342,11 @@ export async function PUT(request: NextRequest) {
     );
   }
 
+  // 🛠️ CHECK LOCAL STATUS EARLY
+  const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
+  const isLocalOllama = (selectedModel as any).id === 'local-ollama';
+  const isLocal = isLocalVLLM || isLocalOllama;
+
   let token = user.token as string;
   let billTo: string | null = null;
 
@@ -356,7 +361,8 @@ export async function PUT(request: NextRequest) {
     ? authHeaders.get("x-forwarded-for")?.split(",")[1].trim()
     : authHeaders.get("x-forwarded-for");
 
-  if (!token || token === "null" || token === "") {
+  // 🛠️ BYPASS RATE LIMIT FOR LOCAL MODELS
+  if (!isLocal && (!token || token === "null" || token === "")) {
     ipAddresses.set(ip, (ipAddresses.get(ip) || 0) + 1);
     if (ipAddresses.get(ip) > MAX_REQUESTS_PER_IP) {
       return NextResponse.json(
@@ -388,10 +394,6 @@ export async function PUT(request: NextRequest) {
 
     (async () => {
       try {
-        const isLocalVLLM = (selectedModel as any).id === 'local-vllm';
-        const isLocalOllama = (selectedModel as any).id === 'local-ollama';
-        const isLocal = isLocalVLLM || isLocalOllama;
-
         console.log(`[PUT] isLocal: ${isLocal}, VLLM: ${isLocalVLLM}, Ollama: ${isLocalOllama}`);
 
         const basePrompt = selectedModel.value.includes('MiniMax')
@@ -441,7 +443,7 @@ export async function PUT(request: NextRequest) {
         } else {
             console.log(`[PUT] Using InferenceClient for remote model: ${modelName}`);
             // 🛠️ USE INFERENCE CLIENT FOR REMOTE MODELS
-            const client = new InferenceClient(token);
+            const client = new InferenceClient(token || undefined);
             const chatCompletion = client.chatCompletionStream(
             {
                 model: modelName,
