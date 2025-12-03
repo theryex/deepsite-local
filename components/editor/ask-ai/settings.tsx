@@ -31,7 +31,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { useAi } from "@/hooks/useAi";
-import { getProviders } from "@/lib/providers-fetch";
+import { getProviders } from "../../../lib/providers-fetch";
 import Loading from "@/components/loading";
 
 // NOTE: Removing the local 'type ModelItem' definition as it clashes with the global 'ModelType'
