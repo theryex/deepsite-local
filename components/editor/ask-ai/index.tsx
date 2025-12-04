@@ -49,7 +49,6 @@ export const AskAi = ({
     audio: hookAudio,
     cancelRequest,
     model,
-    selectedModel,
   } = useAi(onScrollToBottom);
   const { openLoginModal } = useLoginModal();
   const { openProModal } = useProModal();
@@ -91,14 +90,11 @@ export const AskAi = ({
 
     if (isFollowUp && !redesignMarkdown && !isSameHtml) {
       const isLocalModel =
-        (selectedModel as any)?.id === "local-vllm" ||
-        (selectedModel as any)?.id === "local-ollama" ||
-        (model &&
-          (model.startsWith("/") ||
-            model.startsWith("\\") ||
-            model.includes("local-") ||
-            model.includes("192.168")));
-
+        model &&
+        (model.startsWith("/") ||
+          model.startsWith("\\") ||
+          model.includes("local-") ||
+          model.includes("192.168"));
       if (!user && !isLocalModel) return openLoginModal({ prompt });
       const result = await callAiFollowUp(prompt, enhancedSettings, isNew);
 
